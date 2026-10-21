@@ -8,6 +8,10 @@ param azureAiProjectEndpoint string
 @description('Model deployment in the Microsoft Foundry project')
 param azureAiModelDeploymentName string
 param graphHistoryMessageCount string = '10'
+@description('SharePoint tenant prefix, for example contoso')
+param sharePointTenantDomain string = ''
+@description('Maximum allowed attached file size in bytes')
+param maxFileSizeBytes int = 20971520
 
 param webAppSKU string
 param linuxFxVersion string
@@ -24,6 +28,24 @@ param pythonVersion string = linuxFxVersion
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   location: location
   name: identityName
+}
+
+// SECURITY: Do not grant the managed identity Microsoft Graph application roles
+// such as Files.Read.All or Sites.Read.All. Those are organization-wide: they
+// would let this App Service read every OneDrive and SharePoint file in the
+// tenant. Files shared in a chat are read with the sending user's delegated token
+// (Teams SSO + on-behalf-of) instead. See docs/file-access-security.md (ADR-001).
+var oauthConnectionName = 'GraphDelegated'
+var oauthConnectionUniqueId = guid(resourceBaseName, 'BotServiceOauthConnection')
+
+module userAuthApp './userAuth/userAuthApp.bicep' = {
+  name: 'User-auth-app'
+  params: {
+    appName: '${resourceBaseName}-userauth'
+    botId: identity.properties.clientId
+    managedIdentityPrincipalId: identity.properties.principalId
+    oauthConnectionUniqueId: oauthConnectionUniqueId
+  }
 }
 
 // Compute resources for your Web App
@@ -92,12 +114,45 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
           value: graphHistoryMessageCount
         }
         {
+          name: 'SHAREPOINT_TENANT_DOMAIN'
+          value: sharePointTenantDomain
+        }
+        {
+          name: 'MAX_FILE_SIZE_BYTES'
+          value: string(maxFileSizeBytes)
+        }
+        {
           name: 'BOT_TENANT_ID'
           value: identity.properties.tenantId
         }
         { 
           name: 'BOT_TYPE'
           value: 'UserAssignedMsi' 
+        }
+        {
+          // App-only Graph calls use the user-auth app (through the managed
+          // identity's federated credential) because Teams grants chat-scoped RSC
+          // to webApplicationInfo.id.
+          name: 'GRAPH_AUTH_MODE'
+          value: 'federated'
+        }
+        {
+          name: 'SSO_APP_ID'
+          value: userAuthApp.outputs.appId
+        }
+        {
+          // Enables the Agents SDK user-authorization handler named GRAPH, which
+          // gets the delegated token from the Azure Bot OAuth connection.
+          name: 'AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__GRAPH__SETTINGS__AZUREBOTOAUTHCONNECTIONNAME'
+          value: oauthConnectionName
+        }
+        {
+          name: 'AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__GRAPH__SETTINGS__TITLE'
+          value: 'Sign in to share files'
+        }
+        {
+          name: 'AGENTAPPLICATION__USERAUTHORIZATION__HANDLERS__GRAPH__SETTINGS__TEXT'
+          value: 'Sign in so the agent can read the files you attached, using your own access.'
         }
       ]
       ftpsState: 'FtpsOnly'
@@ -121,6 +176,10 @@ module azureBotRegistration './botRegistration/azurebot.bicep' = {
     identityTenantId: identity.properties.tenantId
     botAppDomain: webApp.properties.defaultHostName
     botDisplayName: botDisplayName
+    userAuthAppId: userAuthApp.outputs.appId
+    userAuthIdentifierUri: userAuthApp.outputs.identifierUri
+    oauthConnectionName: oauthConnectionName
+    oauthConnectionUniqueId: oauthConnectionUniqueId
   }
 }
 
@@ -132,3 +191,5 @@ output BOT_TENANT_ID string = identity.properties.tenantId
 output CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID string = identity.properties.clientId
 output CONNECTIONS__SERVICE_CONNECTION__SETTINGS__AUTHTYPE string = 'UserManagedIdentity'
 output CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID string = identity.properties.tenantId
+output SSO_APP_ID string = userAuthApp.outputs.appId
+output SSO_APP_ID_URI string = userAuthApp.outputs.identifierUri

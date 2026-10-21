@@ -1,0 +1,7 @@
+{
+    "id": "${{BOT_OBJECT_ID}}",
+    "appId": "${{BOT_ID}}",
+    "displayName": "Demo Foundry Agent",
+    "signInAudience": "AzureADMyOrg",
+    "requiredResourceAccess": []
+}

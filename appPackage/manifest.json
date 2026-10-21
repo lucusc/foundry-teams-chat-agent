@@ -1,7 +1,7 @@
 {
     "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.30/MicrosoftTeams.schema.json",
     "manifestVersion": "1.30",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "id": "${{TEAMS_APP_ID}}",
     "developer": {
         "name": "Demo Foundry Agent",
@@ -19,7 +19,7 @@
     },
     "description": {
         "short": "Answers questions with a Microsoft Foundry model.",
-        "full": "Answers questions in personal chats and consenting Teams group chats. When mentioned in a group chat, it sends a bounded window of recent messages to the configured Microsoft Foundry model and does not persist the history."
+        "full": "Answers questions in personal chats and consenting Teams group chats. It reads shared files attached to a message and sends their content, along with a bounded window of recent group-chat messages, to the configured Microsoft Foundry model without persisting them."
     },
     "accentColor": "#FFFFFF",
     "bots": [
@@ -29,7 +29,7 @@
                 "groupChat",
                 "personal"
             ],
-            "supportsFiles": false,
+            "supportsFiles": true,
             "isNotificationOnly": false,
             "supportsTargetedMessages": false
         }
@@ -42,8 +42,8 @@
         "messageTeamMembers"
     ],
     "webApplicationInfo": {
-        "id": "${{BOT_ID}}",
-        "resource": "https://RscBasedStoreApp"
+        "id": "${{SSO_APP_ID}}",
+        "resource": "api://botid-${{BOT_ID}}"
     },
     "authorization": {
         "permissions": {
@@ -55,5 +55,7 @@
             ]
         }
     },
-    "validDomains": []
+    "validDomains": [
+        "token.botframework.com"
+    ]
 }

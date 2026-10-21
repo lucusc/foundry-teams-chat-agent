@@ -22,6 +22,9 @@ async def entry_point(req: Request) -> Response:
 
 
 app = Application(middlewares=[jwt_authorization_middleware])
+# A1: Bot Framework authenticates inbound activities with a signed JWT whose
+# audience is BOT_ID; the Azure Bot registration establishes that bot identity.
+# Local and deployed traffic follow the same SDK validation path.
 app.router.add_post("/api/messages", entry_point)
 app["agent_configuration"] = connection_manager.get_default_connection_configuration()
 app["agent_app"] = agent_app

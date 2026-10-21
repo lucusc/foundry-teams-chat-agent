@@ -21,7 +21,7 @@ provision:
       name: demo-foundry-agent${{APP_NAME_SUFFIX}}
       generateClientSecret: true
       generateServicePrincipal: true
-      signInAudience: AzureADMultipleOrgs
+      signInAudience: AzureADMyOrg
     writeToEnvironmentFile:
       # The Microsoft Entra application's client id created for bot.
       clientId: BOT_ID
@@ -29,6 +29,22 @@ provision:
       clientSecret: SECRET_BOT_PASSWORD
       # The Microsoft Entra application's object id created for bot.
       objectId: BOT_OBJECT_ID
+
+  # Keep the local bot app single-tenant with NO Microsoft Graph application
+  # permissions. Tenant-wide Files.Read.All/Sites.Read.All application roles
+  # would let anyone with the bot secret read every file in the organization.
+  # See docs/file-access-security.md.
+  - uses: aadApp/update
+    with:
+      manifestPath: ./aad.manifest.json
+      outputFilePath: ./build/aad.manifest.json
+
+  # Locally the bot app is also the RSC app in webApplicationInfo.id. Teams SSO
+  # and delegated OneDrive/SharePoint reads are configured only in Azure, so
+  # local runs report that sign-in isn't configured for those files.
+  - uses: script
+    with:
+      run: echo "::set-teamsfx-env SSO_APP_ID=${{BOT_ID}}"
 
   # Create or update the bot registration on dev.botframework.com
   - uses: botFramework/create
@@ -79,3 +95,4 @@ deploy:
         AZURE_AI_PROJECT_ENDPOINT: ${{AZURE_AI_PROJECT_ENDPOINT}}
         AZURE_AI_MODEL_DEPLOYMENT_NAME: ${{AZURE_AI_MODEL_DEPLOYMENT_NAME}}
         GRAPH_HISTORY_MESSAGE_COUNT: ${{GRAPH_HISTORY_MESSAGE_COUNT}}
+        SHAREPOINT_TENANT_DOMAIN: ${{SHAREPOINT_TENANT_DOMAIN}}
