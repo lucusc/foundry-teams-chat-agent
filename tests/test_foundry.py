@@ -342,6 +342,32 @@ def test_graph_hosted_content_failures_are_reported(status, payload, error):
         GraphChatHistory(credential, 10, client).read_message("chat-id", "message-id")
 
 
+@pytest.mark.parametrize("timeouts", [1, 2])
+def test_graph_history_retries_one_timeout(timeouts):
+    credential = Mock()
+    credential.get_token.return_value.token = "graph-token"
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        if len(calls) <= timeouts:
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(
+            200,
+            json={"value": [{"from": {"user": {"displayName": "A"}}, "body": {"content": "hi"}}]},
+        )
+
+    history = GraphChatHistory(
+        credential, 10, httpx.Client(transport=httpx.MockTransport(respond))
+    )
+    if timeouts == 1:
+        assert history.read("chat-id") == ["A: hi"]
+    else:
+        with pytest.raises(httpx.ReadTimeout):
+            history.read("chat-id")
+    assert len(calls) == 2
+
+
 def test_model_receives_history_as_untrusted_context():
     project = Mock()
     openai = project.get_openai_client.return_value

@@ -1,10 +1,13 @@
 import base64
+import logging
 import re
 from html.parser import HTMLParser
 from urllib.parse import quote
 
 import httpx
 from azure.ai.projects import AIProjectClient
+
+logger = logging.getLogger("demo-foundry-agent.graph")
 
 _GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 _TEAMS_MENTION = re.compile(r"<at>.*?</at>", flags=re.IGNORECASE | re.DOTALL)
@@ -97,12 +100,21 @@ class GraphChatHistory:
         # Use an application-managed async client and explicit shutdown in production.
         self._client = client or httpx.Client(timeout=10.0)
 
+    def _get(self, url, **kwargs):
+        # Graph chat reads occasionally stall past the timeout; GETs are
+        # idempotent, so retry once before failing the turn.
+        try:
+            return self._client.get(url, **kwargs)
+        except httpx.TimeoutException:
+            logger.warning("Microsoft Graph request timed out; retrying once")
+            return self._client.get(url, **kwargs)
+
     def read(self, chat_id):
         # Request an application token for the Microsoft Graph audience. Graph
         # then enforces ChatMessage.Read.Chat RSC consent for this specific chat;
         # possessing an application identity alone does not grant chat access.
         access_token = self._credential.get_token(_GRAPH_SCOPE).token
-        response = self._client.get(
+        response = self._get(
             f"https://graph.microsoft.com/v1.0/chats/{quote(chat_id, safe='')}/messages",
             headers={"Authorization": f"Bearer {access_token}"},
             params={
@@ -141,7 +153,7 @@ class GraphChatHistory:
             "https://graph.microsoft.com/v1.0/chats/"
             f"{quote(chat_id, safe='')}/messages/{quote(message_id, safe='')}"
         )
-        response = self._client.get(
+        response = self._get(
             message_url,
             headers={"Authorization": f"Bearer {access_token}"},
         )
@@ -152,7 +164,7 @@ class GraphChatHistory:
         # Attachments are included by default; GET chatMessage rejects $expand.
         # Inline images are a separate relationship, referenced in the HTML body.
         if "/hostedContents/" in (payload.get("body") or {}).get("content", ""):
-            hosted_response = self._client.get(
+            hosted_response = self._get(
                 f"{message_url}/hostedContents",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
