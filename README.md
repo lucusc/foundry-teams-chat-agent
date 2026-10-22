@@ -49,6 +49,18 @@ The Teams agent lifecycle is rooted in `m365agents*.yml`. The shared Foundry
 account, project, and model are independently managed with AZD under
 [`foundry-platform/`](foundry-platform/README.md).
 
+### Current chat and file capabilities
+
+Personal chat means a user's one-to-one conversation with this agent, not their
+private conversations with other people.
+
+| Capability | Personal chat with the agent | Group chat |
+| --- | --- | --- |
+| Read the current message | Yes | Yes, when @mentioned |
+| Read previous messages | No; earlier turns are not included in the model request | Yes; a bounded window of recent messages, default 10, after chat-specific consent |
+| Read files attached to the current request | Yes, for supported files | Yes, for supported files on the message that @mentions the agent |
+| Find and read files shared in earlier messages | No | No; historical attachments are not retrieved |
+
 ## Configure
 
 Set these values for the workflow you want to run:
