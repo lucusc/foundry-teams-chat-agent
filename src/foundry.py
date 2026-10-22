@@ -137,16 +137,32 @@ class GraphChatHistory:
         # only to chats where the app is installed. Attachments found here are
         # read later with the sender's delegated token, not this credential.
         access_token = self._credential.get_token(_GRAPH_SCOPE).token
-        response = self._client.get(
+        message_url = (
             "https://graph.microsoft.com/v1.0/chats/"
-            f"{quote(chat_id, safe='')}/messages/{quote(message_id, safe='')}",
+            f"{quote(chat_id, safe='')}/messages/{quote(message_id, safe='')}"
+        )
+        response = self._client.get(
+            message_url,
             headers={"Authorization": f"Bearer {access_token}"},
-            params={"$expand": "attachments,hostedContents"},
         )
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
             raise RuntimeError("Microsoft Graph returned an invalid chat message")
+        # Attachments are included by default; GET chatMessage rejects $expand.
+        # Inline images are a separate relationship, referenced in the HTML body.
+        if "/hostedContents/" in (payload.get("body") or {}).get("content", ""):
+            hosted_response = self._client.get(
+                f"{message_url}/hostedContents",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            hosted_response.raise_for_status()
+            hosted_payload = hosted_response.json()
+            if not isinstance(hosted_payload, dict) or not isinstance(
+                hosted_payload.get("value"), list
+            ):
+                raise RuntimeError("Microsoft Graph returned an invalid hosted content list")
+            payload["hostedContents"] = hosted_payload["value"]
         return payload
 
 

@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
@@ -266,10 +267,79 @@ def test_graph_reads_triggering_message_attachments_with_rsc_credential():
     assert client.get.call_args.kwargs["headers"] == {
         "Authorization": "Bearer graph-token"
     }
-    assert client.get.call_args.kwargs["params"] == {
-        "$expand": "attachments,hostedContents"
-    }
+    assert "params" not in client.get.call_args.kwargs
+    assert client.get.call_args.args == (
+        "https://graph.microsoft.com/v1.0/chats/chat%2Fid/messages/m%2Fid",
+    )
     response.raise_for_status.assert_called_once_with()
+
+
+@pytest.mark.parametrize("inline_image", [False, True])
+def test_graph_message_uses_supported_endpoints(inline_image):
+    credential = Mock()
+    credential.get_token.return_value.token = "graph-token"
+    message = {
+        "attachments": [{"contentType": "reference", "name": "notes.pdf"}],
+        "body": {
+            "content": (
+                '<img src="../messages/message-id/hostedContents/image-id/$value">'
+                if inline_image else "<p>Read the attachment</p>"
+            )
+        },
+    }
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if request.url.query:
+            return httpx.Response(400, json={"error": {"code": "BadRequest"}})
+        if request.url.path.endswith("/hostedContents"):
+            return httpx.Response(
+                200, json={"value": [{"id": "image-id", "contentType": "image/png"}]}
+            )
+        return httpx.Response(200, json=message)
+
+    client = httpx.Client(transport=httpx.MockTransport(respond))
+    result = GraphChatHistory(credential, 10, client).read_message(
+        "19:group@thread.v2", "message-id"
+    )
+
+    assert result["attachments"] == message["attachments"]
+    assert len(requests) == (2 if inline_image else 1)
+    assert requests[0].url.raw_path == (
+        b"/v1.0/chats/19%3Agroup%40thread.v2/messages/message-id"
+    )
+    if inline_image:
+        assert result["hostedContents"] == [
+            {"id": "image-id", "contentType": "image/png"}
+        ]
+        assert requests[1].headers["Authorization"] == (
+            requests[0].headers["Authorization"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "payload", "error"),
+    [
+        (403, {"error": {"code": "Forbidden"}}, httpx.HTTPStatusError),
+        (200, {"value": {}}, RuntimeError),
+    ],
+)
+def test_graph_hosted_content_failures_are_reported(status, payload, error):
+    credential = Mock()
+    credential.get_token.return_value.token = "graph-token"
+
+    def respond(request):
+        if request.url.path.endswith("/hostedContents"):
+            return httpx.Response(status, json=payload)
+        return httpx.Response(
+            200,
+            json={"body": {"content": '<img src="../hostedContents/image-id/$value">'}},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(respond))
+    with pytest.raises(error):
+        GraphChatHistory(credential, 10, client).read_message("chat-id", "message-id")
 
 
 def test_model_receives_history_as_untrusted_context():

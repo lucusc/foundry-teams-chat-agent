@@ -250,6 +250,14 @@ sequenceDiagram
 
 ### Components
 
+The triggering group-chat message is fetched without `$expand`: the
+[Get chatMessage API](https://learn.microsoft.com/graph/api/chatmessage-get)
+does not support OData query parameters and includes file `attachments` in its
+normal response. When the message body references inline hosted content, the
+agent lists it through the message's separate `/hostedContents` endpoint using
+the same chat-scoped application credential. OneDrive/SharePoint downloads still
+require the sending user's delegated token.
+
 | Component | Where | Purpose |
 | --- | --- | --- |
 | Sign-in Entra app (`<resourceBaseName>-userauth`) | [`infra/userAuth/userAuthApp.bicep`](../infra/userAuth/userAuthApp.bicep) | Single-tenant app. Exposes `api://botid-<bot id>/access_as_user`, pre-authorized for the Teams clients. Requests only delegated Graph scopes: `openid`, `profile`, `offline_access`, `Files.Read.All`, and `Sites.Read.All`. |
