@@ -610,7 +610,9 @@ class TeamsFileHandler:
                 raise FileReadError("permission not granted")
             if segments[2].casefold() not in ("documents", "shared documents"):
                 raise FileReadError("unsupported link format")
-            path = "/" + "/".join(quote(part, safe="") for part in segments[2:])
+            # segments[2] is the OneDrive library, which Graph exposes as the
+            # drive root, so the item path starts after it.
+            path = "/" + "/".join(quote(part, safe="") for part in segments[3:])
             user_path = f"/users/{quote(sender_id, safe='')}/drive/root:{path}"
             metadata = self._graph_json(
                 user_path,

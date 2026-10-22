@@ -95,17 +95,19 @@ def test_builds_onedrive_path_from_attached_reference():
 
     handler = make_handler(respond)
     source, metadata = handler._resolve_reference(
-        "https://contoso-my.sharepoint.com/personal/alice/Documents/folder/a.pdf",
+        "https://contoso-my.sharepoint.com/personal/alice/Documents/"
+        "Microsoft%20Teams%20Chat%20Files/a.pdf",
         "user-id",
         "user-token",
     )
 
-    assert requests[0].url.path == (
-        "/v1.0/users/user-id/drive/root:/Documents/folder/a.pdf"
+    # The Documents library is the drive root, so it isn't part of the path.
+    assert requests[0].url.raw_path.decode() == (
+        "/v1.0/users/user-id/drive/root:/Microsoft%20Teams%20Chat%20Files/a.pdf"
     )
     assert requests[0].headers["Authorization"] == "Bearer user-token"
     assert source.graph_content_path == (
-        "/users/user-id/drive/root:/Documents/folder/a.pdf:/content"
+        "/users/user-id/drive/root:/Microsoft%20Teams%20Chat%20Files/a.pdf:/content"
     )
     assert metadata["id"] == "item-id"
 
@@ -508,7 +510,7 @@ def test_group_reference_uses_user_token_while_inline_image_uses_rsc_app_token()
     def respond(request):
         path = request.url.path
         seen.append((path, request.headers.get("Authorization")))
-        if path == "/v1.0/users/user-id/drive/root:/Documents/a.pdf":
+        if path == "/v1.0/users/user-id/drive/root:/a.pdf":
             return httpx.Response(
                 200,
                 json={
@@ -518,7 +520,7 @@ def test_group_reference_uses_user_token_while_inline_image_uses_rsc_app_token()
                     "file": {"mimeType": "application/pdf"},
                 },
             )
-        if path == "/v1.0/users/user-id/drive/root:/Documents/a.pdf:/content":
+        if path == "/v1.0/users/user-id/drive/root:/a.pdf:/content":
             return httpx.Response(
                 200, content=body, headers={"Content-Type": "application/pdf"}
             )
@@ -546,11 +548,11 @@ def test_group_reference_uses_user_token_while_inline_image_uses_rsc_app_token()
     reader.assert_not_called()
     assert [file.name for file in result.files] == ["a.pdf", "hosted-id.png"]
     auth_by_path = dict(seen)
-    assert auth_by_path["/v1.0/users/user-id/drive/root:/Documents/a.pdf"] == (
+    assert auth_by_path["/v1.0/users/user-id/drive/root:/a.pdf"] == (
         "Bearer user-token"
     )
     assert auth_by_path[
-        "/v1.0/users/user-id/drive/root:/Documents/a.pdf:/content"
+        "/v1.0/users/user-id/drive/root:/a.pdf:/content"
     ] == ("Bearer user-token")
     hosted_path = next(path for path in auth_by_path if "hostedContents" in path)
     assert auth_by_path[hosted_path] == "Bearer graph-token"
@@ -560,7 +562,7 @@ def _pending_graph_export(export_id):
     _pending_exports[export_id] = PendingExport(
         source=FileSource(
             "graph_item",
-            graph_content_path="/users/user-id/drive/root:/Documents/a.pdf:/content",
+            graph_content_path="/users/user-id/drive/root:/a.pdf:/content",
         ),
         file_name="a.pdf",
         content_type="application/pdf",

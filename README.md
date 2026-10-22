@@ -138,8 +138,11 @@ So the agent uses **Teams single sign-on with the Microsoft Entra on-behalf-of
 - **No secrets and no admin role assignment.** The Azure Bot token service and
   App Service authenticate as a single-tenant sign-in app through federated
   identity credentials.
-- **Per-user consent.** The first time users share a file with the agent, they
-  sign in and approve the delegated scopes.
+- **Delegated admin consent.** Microsoft's default user-consent policy blocks
+  user consent to `Files.Read.All` and `Sites.Read.All`, so an application
+  administrator grants tenant-wide consent for the sign-in app's delegated
+  scopes. Users still sign in once, and each user's token is limited to that
+  user's access.
 
 Residual risk: delegated `*.Read.All` scopes still cover everything *that
 user* can open. The code is what limits use to the attachment. For the
@@ -225,8 +228,9 @@ delegated permissions.
 >
 > **Requires:** Deployed Azure resources, Foundry access for the managed identity,
 > and app installation with `ChatMessage.Read.Chat` consent in each test group
-> chat. Each user who shares OneDrive or SharePoint files must be allowed to
-> consent to the delegated scopes, or an administrator must grant consent.
+> chat. An administrator must grant consent for the delegated file scopes, and
+> each user who shares OneDrive or SharePoint files must add the app for
+> personal use.
 > Use non-sensitive messages because recent history and file content are sent
 > to Foundry.
 >

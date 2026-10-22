@@ -160,8 +160,20 @@ Provisioning alone does not upload Python; deployment does not install Teams.
 **Do not grant Graph application `Files.Read.All` or `Sites.Read.All`.**
 History uses chat-scoped RSC; files use the sender's delegated Teams SSO token.
 No organization-wide application file permission or bot secret is needed.
-If user consent is restricted, an administrator can approve the **delegated**
-permissions on the generated `-userauth` app. See
+**Grant admin consent for the delegated file scopes.** Microsoft's managed
+user-consent policy (`microsoft-user-default-recommended`) excludes
+`Files.Read.All` and `Sites.Read.All`, even as delegated permissions. Users then
+see **Need admin approval**, and the bot logs `Consent Required` from the token
+exchange. A Cloud Application Administrator, Application Administrator, or
+Global Administrator grants tenant-wide consent for the generated `-userauth`
+app's **delegated** scopes (`SSO_APP_ID` in `env/.env.$ENVIRONMENT`):
+
+```bash
+az ad app permission admin-consent --id "$SSO_APP_ID"
+```
+
+This does not add application permissions. Each token is still limited to the
+signed-in user's own access. See
 [File access security](file-access-security.md).
 
 ## 4. Install and verify in Teams
@@ -176,8 +188,12 @@ Use non-sensitive test messages and files: their contents go to Foundry.
 5. Add that environment's app to a **group chat**, approve **Read this chat's
    messages**, and post a short fact. Use the mention picker to ask the bot
    about the fact. Confirm it uses the history and ignores unmentioned messages.
-6. Attach a supported PDF or image from OneDrive/SharePoint and mention the
-   bot. Complete **Sign in to share files** and confirm an answer about the file.
+6. Attach a supported PDF or image from OneDrive/SharePoint **in the same
+   message** that mentions the bot. Only the triggering message's attachments
+   are read. If Teams privately says to add the app for personal use, select
+   **Add**: Teams SSO in group chats requires a personal installation for each
+   user who signs in. Complete **Sign in to share files** and confirm an answer
+   about the file.
    Office/text files are unsupported; the default file limit is 20 MiB.
 7. In Azure Bot **Configuration > OAuth Connection Settings**, run **Test
    Connection** on `GraphDelegated` if file sign-in fails.

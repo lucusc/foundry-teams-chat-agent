@@ -123,8 +123,9 @@ configured with
 - No secrets: the token service and App Service authenticate as the sign-in app
   with
   [federated identity credentials](https://learn.microsoft.com/entra/workload-id/workload-identity-federation-config-app-trust-managed-identity).
-- Users can consent for themselves; no privileged administrator is needed
-  unless the tenant restricts user consent.
+- No privileged role is needed: an application administrator can grant consent
+  for the delegated scopes. User self-consent works only where the tenant's
+  consent policy allows these scopes (see *Admin consent for delegated scopes*).
 - Follows the documented Teams pattern and Microsoft's
   [ProxyAgent-Python sample](https://github.com/OfficeDev/microsoft-365-agents-toolkit-samples/tree/dev/ProxyAgent-Python).
 
@@ -150,7 +151,7 @@ configured with
 | Confused deputy | Prevented only by code | Prevented by Graph and code |
 | Group chats | Yes | Yes |
 | Deployed secrets | None (managed identity) | None (federated credentials) |
-| Admin burden | Privileged tenant-wide admin consent | App registration only; per-user consent |
+| Admin burden | Privileged tenant-wide admin consent | Delegated admin consent (non-privileged role) |
 | User experience | No prompts | One sign-in per user |
 | Local debugging | Works | Cloud attachments not available |
 | Complexity | Low | Moderate |
@@ -168,10 +169,18 @@ complexity and the one-time sign-in are acceptable costs.
 
 Supporting decisions:
 
-- **Per-user consent.** No administrator pre-consent is configured. If a tenant
-  [restricts user consent](https://learn.microsoft.com/entra/identity/enterprise-apps/configure-user-consent),
-  an administrator can grant consent for the *delegated* permissions; tokens
-  are still limited to each user's own access.
+- **Admin consent for delegated scopes.** Microsoft's managed
+  [user-consent policy](https://learn.microsoft.com/entra/identity/enterprise-apps/configure-user-consent)
+  (`microsoft-user-default-recommended`) excludes `Files.Read.All` and
+  `Sites.Read.All` from user consent, even when delegated. In such tenants,
+  users see **Need admin approval** and the token exchange returns
+  `Consent Required`. An application administrator grants tenant-wide consent
+  for the sign-in app's *delegated* scopes
+  (`az ad app permission admin-consent --id <SSO_APP_ID>`). This adds no
+  application permission; tokens remain limited to each user's own access.
+- **Personal installation.** Teams SSO in a group chat requires the app to be
+  installed for personal use by the user who signs in. Otherwise Teams privately
+  prompts that user to add the app before the sign-in card works.
 - **Deployed only.** Local Teams debugging doesn't provision SSO. It reports
   that sign-in isn't configured instead of falling back to an application
   permission.
@@ -188,7 +197,8 @@ Supporting decisions:
 - A compromised or misbehaving agent can't read files outside what the
   requesting user can access.
 - No identity in the solution holds Graph application file permissions.
-- No secrets or privileged admin grants are needed to deploy.
+- No secrets or privileged-role grants are needed to deploy. Delegated admin
+  consent needs only an application administrator.
 
 ### Negative
 
