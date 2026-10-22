@@ -13,8 +13,8 @@ param modelDeploymentName string = 'gpt-4.1-mini'
 @description('Model version.')
 param modelVersion string = '2025-04-14'
 
-@description('Global Standard model capacity.')
-param modelCapacity int = 10
+@description('Global Standard model capacity, in thousands of tokens per minute. A single request with a large PDF can exceed 10K tokens.')
+param modelCapacity int = 100
 
 var nameSuffix = uniqueString(subscription().id, resourceGroup().id)
 var accountName = take('foundry${nameSuffix}', 24)

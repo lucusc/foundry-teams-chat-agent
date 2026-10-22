@@ -14,7 +14,11 @@ This guide covers only the model infrastructure. To run the bot, use
 Install [Azure Developer CLI](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
 and Azure CLI. You need resource creation permissions, permission to register
 providers, and quota for `gpt-4.1-mini` version `2025-04-14` with Global Standard
-capacity 10 in the selected region. Provisioning incurs Azure charges.
+capacity 100 (100K tokens per minute) in the selected region. Global Standard
+bills per token, so capacity sets the rate limit, not a fixed cost. A single
+request that includes a large PDF can use tens of thousands of tokens and fails
+with HTTP 429 on every retry if it exceeds the per-minute limit. Provisioning
+incurs Azure charges.
 
 Run these commands from the repository root. Enter your actual tenant,
 subscription, dedicated platform resource group, region, and AZD environment

@@ -30,7 +30,7 @@ from microsoft_agents.hosting.core import (
     TurnState,
 )
 from microsoft_agents.hosting.core.app import TypingOptions
-from openai import OpenAIError
+from openai import OpenAIError, RateLimitError
 
 from config import Config
 from files import (
@@ -317,6 +317,20 @@ async def on_message(context: TurnContext, _state: TurnState):
             file_result.files,
         )
         log_stage("foundry_completed")
+    except RateLimitError:
+        # One request larger than the deployment's tokens-per-minute limit
+        # (for example, a large PDF) fails this way on every retry.
+        log_stage("model_rate_limited")
+        logger.exception("Foundry model deployment rate limit exceeded")
+        log_stage("error_reply_started")
+        await context.send_activity(
+            "Demo Foundry Agent's model is over its rate limit. Wait a minute and "
+            "try again. Large files can exceed the per-minute token limit on their "
+            "own; if this keeps happening, try a smaller file or ask an "
+            "administrator to raise the model deployment's capacity."
+        )
+        log_stage("error_reply_completed")
+        return
     except (
         AzureError,
         FileReadError,

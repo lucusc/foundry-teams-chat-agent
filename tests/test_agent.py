@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 
+import httpx
 import pytest
 from microsoft_agents.activity import (
     Activity,
@@ -14,6 +15,7 @@ from microsoft_agents.activity import (
     ResourceResponse,
 )
 from microsoft_agents.hosting.core import TurnContext, TypingIndicator
+from openai import RateLimitError
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -196,7 +198,7 @@ def test_sign_in_selector_ignores_non_message_activities(monkeypatch):
     assert agent.needs_user_graph_token(_context(activity)) is False
 
 
-@pytest.mark.parametrize("failure", [None, "foundry", "reply", "ignored"])
+@pytest.mark.parametrize("failure", [None, "foundry", "rate_limit", "reply", "ignored"])
 def test_message_stage_logs_are_correlated_and_private(monkeypatch, caplog, failure):
     agent, _ = _load_agent(monkeypatch, "bot")
     caplog.set_level("INFO", logger="demo-foundry-agent")
@@ -214,6 +216,14 @@ def test_message_stage_logs_are_correlated_and_private(monkeypatch, caplog, fail
     agent.gateway.ask.return_value = "private-answer-secret"
     if failure == "foundry":
         agent.gateway.ask.side_effect = RuntimeError("model unavailable")
+    elif failure == "rate_limit":
+        agent.gateway.ask.side_effect = RateLimitError(
+            "token rate limit exceeded",
+            response=httpx.Response(
+                429, request=httpx.Request("POST", "https://example.test")
+            ),
+            body=None,
+        )
     context = _context(_message(text="private-message-secret"))
     context.send_activity = AsyncMock()
     if failure == "reply":
@@ -246,6 +256,12 @@ def test_message_stage_logs_are_correlated_and_private(monkeypatch, caplog, fail
     elif failure == "foundry":
         assert "Agent stage=message_processing_failed request_id=test-request" in stages
         assert stages[-1] == "Agent stage=error_reply_completed request_id=test-request"
+    elif failure == "rate_limit":
+        assert "Agent stage=model_rate_limited request_id=test-request" in stages
+        assert stages[-1] == "Agent stage=error_reply_completed request_id=test-request"
+        reply = context.send_activity.call_args.args[0]
+        assert "rate limit" in reply
+        assert "consent" not in reply
     else:
         assert "Agent stage=foundry_completed request_id=test-request" in stages
         assert stages[-1] == (
