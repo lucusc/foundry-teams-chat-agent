@@ -13,6 +13,11 @@ Foundry model. Users want to attach files and ask about them. Supported ways to
 share a file include uploading from a device, attaching a cloud file, and
 sharing from OneDrive or SharePoint.
 
+This describes the access model, not support for every file or sharing-link
+format. The bot host retrieves the bytes and passes them to a Foundry model
+through the Responses API; it does not create a Foundry Agent Service agent,
+give Foundry a Graph token, or configure a File Search index.
+
 How Teams delivers these files determines which identity can read them:
 
 - **Personal-chat uploads** arrive as a `file.download.info` attachment with a
@@ -35,8 +40,9 @@ platform doesn't directly support that:
   chat. No Graph permission means "files in this chat".
 - [Selected permissions](https://learn.microsoft.com/graph/permissions-selected-overview)
   (`Sites.Selected`, `Files.SelectedOperations.Selected`) need an
-  administrator to grant access to each site, drive, or file in advance. Chat
-  files are created ad hoc in each sender's OneDrive, so this isn't practical.
+  explicit resource grant in addition to consent. A site grant can cover
+  multiple files, but it is not a chat-scoped grant. For this demo, managing
+  grants for ad hoc files in different users' OneDrives isn't practical.
 - [`/shares/{encoded-url}`](https://learn.microsoft.com/graph/api/shares-get)
   would resolve sharing links directly, but it needs `Files.ReadWrite` (a write
   permission). Reading by drive path needs only `Files.Read.All` and, for
@@ -115,8 +121,9 @@ configured with
 [Agents SDK user authorization and a federated credential](https://learn.microsoft.com/microsoft-365/agents-sdk/azure-bot-user-authorization-federated-credentials).
 
 **Pros**
-- The user's own access is the ceiling: Graph refuses anything the user can't
-  open, so confused-deputy requests fail.
+- For delegated Graph calls, the user's own access is the ceiling: Graph
+  refuses files outside that user's access. This avoids the app-only
+  file-access confused deputy described above.
 - The code narrows it further: only the triggering message's attachments are
   resolved, with the token of that message's sender.
 - No organization-wide grant and no Graph application role assignment.
@@ -132,12 +139,14 @@ configured with
 **Cons**
 - More moving parts: a sign-in Entra app, an Azure Bot OAuth connection, two
   federated credentials, and Teams manifest `webApplicationInfo`.
-- Each user signs in and consents the first time they share a cloud file.
+- Each user must have a usable sign-in session. Consent is required only if
+  the scopes haven't already been consented; tenant-wide delegated admin
+  consent can satisfy that requirement.
 - Delegated `Files.Read.All` and `Sites.Read.All` still cover everything *that
   user* can open, not only the attachment. The code limits use to the
   attachment.
-- Teams SSO isn't available in local debugging, so cloud attachments can be
-  tested only in the deployed environment.
+- This repository's local debugging configuration doesn't provision Teams
+  SSO, so its cloud-attachment flow must be tested in the deployed environment.
 - Teams grants RSC to `webApplicationInfo.id`, which SSO requires to be the
   sign-in app. App-only RSC calls must therefore also authenticate as the
   sign-in app (through a managed-identity federated credential).
@@ -194,11 +203,13 @@ Supporting decisions:
 
 ### Positive
 
-- A compromised or misbehaving agent can't read files outside what the
-  requesting user can access.
+- Delegated Graph file reads are bounded by the signed-in user's access,
+  unlike tenant-wide application file permissions.
 - No identity in the solution holds Graph application file permissions.
-- No secrets or privileged-role grants are needed to deploy. Delegated admin
-  consent needs only an application administrator.
+- The deployed runtime needs no client secret or tenant-wide Graph application
+  file role. Deployment still requires Azure resource permissions, Entra app
+  creation permissions, and a Foundry RBAC assignment. Delegated admin consent
+  can be granted by an application administrator.
 
 ### Negative
 
@@ -217,14 +228,40 @@ Supporting decisions:
 ### Residual risk
 
 - Delegated `*.Read.All` scopes cover every file the signed-in user can open.
-  A code defect could read other files *of that user*, but never files the user
-  can't access.
+  A code defect could read other files accessible to that user. This is a
+  per-token authorization boundary, not a guarantee against host compromise:
+  a compromised host could misuse tokens for other signed-in users, chat RSC
+  access, and pre-authenticated URLs available to it.
+- File access is checked for the sender, not separately for every group-chat
+  participant. The bot's answer is visible to the conversation; ensure the
+  attachment is appropriate for that audience.
 - The Azure Bot token service caches user tokens. Users can revoke consent at
   [My Apps](https://myapps.microsoft.com); administrators can remove grants
   under
   [Enterprise applications](https://learn.microsoft.com/entra/identity/enterprise-apps/manage-application-permissions).
 - File content is sent to the Foundry model. Use non-sensitive data while
-  testing.
+  testing. The bot doesn't write file bytes to durable local storage, but this
+  is not a zero-retention guarantee for Foundry. The Responses call doesn't
+  explicitly set `store=False`; review service retention and logging policies.
+
+### Demo support boundaries
+
+- Only attachments on the triggering message are processed, not files on
+  earlier messages or URLs typed into message text.
+- Supported types are PDF, PNG, JPEG, WebP, and non-animated GIF, with a default
+  20 MiB per-file limit. Office and text files are unsupported.
+- URLs must use the configured tenant's `<tenant>.sharepoint.com` or
+  `<tenant>-my.sharepoint.com` host. An empty tenant prefix rejects these URLs.
+- Cloud references must have a supported direct path. The resolver doesn't
+  redeem arbitrary sharing links through `/shares`.
+- OneDrive references are resolved against `/users/{sender-id}/drive`, not
+  against an owner discovered from the URL. Use files in the sender's own
+  OneDrive for the demo; a reference to another person's OneDrive isn't
+  generally supported even if the sender can open it.
+- SharePoint references use `/sites/...` or `/teams/...` paths and match the
+  document-library segment to Graph drive names.
+- Channels are ignored. Bot file-consent uploads are personal-chat only;
+  group-chat replies provide existing file locations instead.
 
 ## Implementation
 
@@ -298,7 +335,9 @@ No identity in this solution should hold the Graph application roles
 `Files.Read.All` (`01d4889c-1287-42c6-ac1f-5d1e02578ef6`) or `Sites.Read.All`
 (`332a536c-c7ef-4017-ab91-336970924f0d`). Check the bot managed identity
 (`BOT_ID` in `env/.env.dev`) and the local bot app (`BOT_ID` in
-`env/.env.local`). If either has one, remove it with the
+`env/.env.local`), as well as the sign-in app (`SSO_APP_ID` in
+`env/.env.dev`). Repeat the check below for each identity's client ID.
+If any has one, remove it with the
 [delete appRoleAssignment API](https://learn.microsoft.com/graph/api/serviceprincipal-delete-approleassignments):
 
 ```bash

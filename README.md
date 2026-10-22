@@ -3,10 +3,17 @@
 A Microsoft 365 Agents Toolkit Python proof of concept that connects Teams to a
 shared Microsoft Foundry project.
 
+> [!WARNING]
+> **Proof of concept (POC) - work in progress.**
+> This project is intended for experimentation and demonstration, not production
+> use. Features, configuration, and deployment steps may change without notice.
+
 ## Development and deployment
 
 Choose the guide for your task:
 
+- [Teams + Foundry file-access TL;DR](docs/teams-foundry-file-access-tldr.md):
+  the setup sequence, permission model, and demo limitations.
 - [Local development](docs/local-development.md): Python setup and unit tests.
 - [Agents Playground](docs/agents-playground.md): local simulator, without Teams.
 - [Local Teams debugging](docs/local-teams-debugging.md): real chats with local breakpoints.
@@ -124,8 +131,8 @@ Microsoft 365 Agents SDK connection manager.
 Teams resource-specific consent (RSC) can scope message access to one chat, but
 it has no file permission. A file shared in a group chat lives in the sender's
 OneDrive, and its permissions belong to OneDrive, not to the chat. Selected
-permissions (`Sites.Selected`) would need an administrator to grant every file
-in advance.
+permissions need explicit resource grants in addition to consent; a site grant
+can cover multiple files, but it isn't a chat-scoped grant.
 
 So the agent uses **Teams single sign-on with the Microsoft Entra on-behalf-of
 (OBO) flow**:

@@ -169,6 +169,7 @@ Global Administrator grants tenant-wide consent for the generated `-userauth`
 app's **delegated** scopes (`SSO_APP_ID` in `env/.env.$ENVIRONMENT`):
 
 ```bash
+read -r -p "Generated sign-in app ID (SSO_APP_ID from the environment file): " SSO_APP_ID
 az ad app permission admin-consent --id "$SSO_APP_ID"
 ```
 
