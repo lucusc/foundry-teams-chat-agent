@@ -18,6 +18,10 @@ Choose the guide for your task:
 - Uses `AIProjectClient` and the Responses API with `DefaultAzureCredential`.
 - Answers personal-chat messages without reading Microsoft Graph history.
 - Responds in group chats only when mentioned.
+- Explicitly enables the SDK typing indicator with no initial delay and a
+  three-second refresh while processing a turn, including chat-context reads,
+  attachment processing, and model calls. It stops when a reply is sent or the
+  turn ends (including errors). Its appearance depends on the Teams client.
 - Reads a bounded window of recent group-chat messages after the chat grants
   `ChatMessage.Read.Chat` resource-specific consent.
 - Reads supported PDF and image attachments from the triggering message and

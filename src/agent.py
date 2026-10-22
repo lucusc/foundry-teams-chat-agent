@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+from contextvars import ContextVar
+from pathlib import Path
 
 import httpx
 from azure.core.exceptions import AzureError
@@ -27,6 +29,7 @@ from microsoft_agents.hosting.core import (
     TurnContext,
     TurnState,
 )
+from microsoft_agents.hosting.core.app import TypingOptions
 from openai import OpenAIError
 
 from config import Config
@@ -44,7 +47,8 @@ from foundry import (
     normalize_message,
 )
 
-load_dotenv()
+# Local debug and Playground settings; absent on App Service, which uses app settings.
+load_dotenv(Path(__file__).resolve().parent.parent / ".localConfigs")
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s | %(message)s",
@@ -125,10 +129,21 @@ agent_app = AgentApplication[TurnState](
     storage=storage,
     adapter=adapter,
     connection_manager=connection_manager,
+    start_typing_timer=True,
+    typing=TypingOptions(initial_delay_ms=0, interval_ms=3000),
     **agents_sdk_config,
 )
 
 GROUP_MESSAGE_KEY = "demo_foundry_agent.group_message"
+diagnostic_request_id: ContextVar[str] = ContextVar(
+    "diagnostic_request_id", default="background"
+)
+
+
+def log_stage(stage: str) -> None:
+    logger.info(
+        "Agent stage=%s request_id=%s", stage, diagnostic_request_id.get()
+    )
 
 
 @agent_app.before_turn
@@ -138,6 +153,7 @@ async def prefetch_group_message(context: TurnContext, _state: TurnState) -> boo
     # sign-in route below ask for delegated access only when the message actually
     # carries a OneDrive/SharePoint file.
     activity = context.activity
+    log_stage("turn_started")
     if (
         getattr(activity, "type", None) == ActivityTypes.message
         and should_process_message(activity)
@@ -147,10 +163,13 @@ async def prefetch_group_message(context: TurnContext, _state: TurnState) -> boo
         message_id = getattr(activity, "id", None)
         if chat_id and message_id:
             try:
+                log_stage("group_message_prefetch_started")
                 context.turn_state[GROUP_MESSAGE_KEY] = await asyncio.to_thread(
                     graph_chat_history.read_message, chat_id, message_id
                 )
+                log_stage("group_message_prefetch_completed")
             except (AzureError, httpx.HTTPError, RuntimeError, ValueError):
+                log_stage("group_message_prefetch_failed")
                 # on_message retries the read and reports the failure to the user.
                 logger.warning(
                     "Could not prefetch the triggering group-chat message",
@@ -200,6 +219,7 @@ async def get_user_graph_token(context: TurnContext) -> str | None:
 async def on_graph_sign_in_failure(
     context: TurnContext, _state: TurnState, _handler_id: str | None
 ):
+    log_stage("user_sign_in_failed")
     await context.send_activity(
         "Sign-in didn't complete, so I can't read OneDrive or SharePoint files "
         "attached to that message. I only read those files on your behalf, using "
@@ -220,8 +240,10 @@ async def on_members_added(context: TurnContext, _state: TurnState):
 
 
 async def on_message(context: TurnContext, _state: TurnState):
+    log_stage("message_handler_started")
     activity = context.activity
     if not should_process_message(activity):
+        log_stage("message_ignored")
         if (
             getattr(
                 getattr(activity, "conversation", None),
@@ -241,10 +263,13 @@ async def on_message(context: TurnContext, _state: TurnState):
             chat_id = getattr(getattr(activity, "conversation", None), "id", None)
             if not chat_id:
                 raise RuntimeError("Teams group-chat activity has no conversation ID")
+            log_stage("group_history_started")
             chat_history = await asyncio.to_thread(graph_chat_history.read, chat_id)
+            log_stage("group_history_completed")
 
         connector_token = None
         if file_handler.requires_connector_token(activity):
+            log_stage("connector_token_started")
             # A2: the Agents SDK's service connection authenticates as the bot
             # UAMI in Azure or the local bot app during Teams debugging, for the
             # https://api.botframework.com audience authorized by the Bot registration.
@@ -253,9 +278,13 @@ async def on_message(context: TurnContext, _state: TurnState):
                     "https://api.botframework.com", []
                 )
             )
+            log_stage("connector_token_completed")
         user_graph_token = None
         if needs_user_graph_token(context):
+            log_stage("user_graph_token_started")
             user_graph_token = await get_user_graph_token(context)
+            log_stage("user_graph_token_completed")
+        log_stage("file_processing_started")
         file_result = await asyncio.to_thread(
             file_handler.process_message_files,
             activity,
@@ -264,8 +293,10 @@ async def on_message(context: TurnContext, _state: TurnState):
             user_graph_token,
             context.turn_state.get(GROUP_MESSAGE_KEY),
         )
+        log_stage("file_processing_completed")
 
         if not user_text and not file_result.files:
+            log_stage("empty_message_reply_started")
             if file_result.skipped:
                 details = "\n".join(
                     f"- {skipped.name}: {skipped.reason}"
@@ -274,15 +305,18 @@ async def on_message(context: TurnContext, _state: TurnState):
                 await context.send_activity(f"No supported file was read:\n{details}")
             else:
                 await context.send_activity("Send a question for Demo Foundry Agent.")
+            log_stage("empty_message_reply_completed")
             return
 
         request_text = user_text or "Please summarize the attached file(s)."
+        log_stage("foundry_started")
         answer = await asyncio.to_thread(
             gateway.ask,
             request_text,
             chat_history,
             file_result.files,
         )
+        log_stage("foundry_completed")
     except (
         AzureError,
         FileReadError,
@@ -291,11 +325,14 @@ async def on_message(context: TurnContext, _state: TurnState):
         RuntimeError,
         ValueError,
     ):
+        log_stage("message_processing_failed")
         logger.exception("Foundry agent request failed")
+        log_stage("error_reply_started")
         await context.send_activity(
             "Demo Foundry Agent could not read the chat context or call the model. "
             "Confirm its Foundry access and group-chat consent, then try again."
         )
+        log_stage("error_reply_completed")
         return
 
     reply = answer
@@ -318,7 +355,9 @@ async def on_message(context: TurnContext, _state: TurnState):
             "use the file location above."
         )
 
+    log_stage("reply_started")
     await context.send_activity(reply)
+    log_stage("reply_completed")
     if (
         not group_chat
         and is_file_return_request(user_text)
@@ -415,6 +454,7 @@ async def on_file_consent(context: TurnContext, _state: TurnState):
 
 @agent_app.error
 async def on_error(context: TurnContext, error: Exception):
+    log_stage("unhandled_turn_error")
     logger.error(
         "Unhandled agent error",
         exc_info=(type(error), error, error.__traceback__),

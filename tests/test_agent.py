@@ -1,10 +1,19 @@
+import asyncio
 import importlib.util
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
+from microsoft_agents.activity import (
+    Activity,
+    ActivityTypes,
+    ChannelAccount,
+    ConversationAccount,
+    ResourceResponse,
+)
+from microsoft_agents.hosting.core import TurnContext, TypingIndicator
 
 ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -185,3 +194,132 @@ def test_sign_in_selector_ignores_non_message_activities(monkeypatch):
     activity.type = "invoke"
 
     assert agent.needs_user_graph_token(_context(activity)) is False
+
+
+@pytest.mark.parametrize("failure", [None, "foundry", "reply", "ignored"])
+def test_message_stage_logs_are_correlated_and_private(monkeypatch, caplog, failure):
+    agent, _ = _load_agent(monkeypatch, "bot")
+    caplog.set_level("INFO", logger="demo-foundry-agent")
+    monkeypatch.setattr(agent, "should_process_message", lambda activity: failure != "ignored")
+    monkeypatch.setattr(
+        agent,
+        "file_handler",
+        Mock(
+            requires_connector_token=Mock(return_value=False),
+            process_message_files=Mock(
+                return_value=SimpleNamespace(files=[], skipped=[])
+            ),
+        ),
+    )
+    agent.gateway.ask.return_value = "private-answer-secret"
+    if failure == "foundry":
+        agent.gateway.ask.side_effect = RuntimeError("model unavailable")
+    context = _context(_message(text="private-message-secret"))
+    context.send_activity = AsyncMock()
+    if failure == "reply":
+        context.send_activity.side_effect = RuntimeError("connector unavailable")
+
+    async def run():
+        token = agent.diagnostic_request_id.set("test-request")
+        try:
+            if failure == "reply":
+                with pytest.raises(RuntimeError, match="connector unavailable"):
+                    await agent.on_message(context, None)
+            else:
+                await agent.on_message(context, None)
+        finally:
+            agent.diagnostic_request_id.reset(token)
+
+    asyncio.run(run())
+    stages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("Agent stage=")
+    ]
+    assert stages[0] == "Agent stage=message_handler_started request_id=test-request"
+    assert all("request_id=test-request" in stage for stage in stages)
+    assert "secret" not in "\n".join(stages)
+    if failure == "ignored":
+        assert "Agent stage=message_ignored request_id=test-request" in stages
+        agent.gateway.ask.assert_not_called()
+        context.send_activity.assert_not_called()
+    elif failure == "foundry":
+        assert "Agent stage=message_processing_failed request_id=test-request" in stages
+        assert stages[-1] == "Agent stage=error_reply_completed request_id=test-request"
+    else:
+        assert "Agent stage=foundry_completed request_id=test-request" in stages
+        assert stages[-1] == (
+            f"Agent stage={'reply_started' if failure else 'reply_completed'} "
+            "request_id=test-request"
+        )
+
+
+@pytest.mark.parametrize("outcome", ["reply", "error", "cancel"])
+def test_typing_refreshes_and_stops(monkeypatch, outcome):
+    _, mocks = _load_agent(monkeypatch, "bot")
+    options = mocks.agent_application.__getitem__.return_value.call_args.kwargs
+    assert options["start_typing_timer"] is True
+    typing_options = options["typing"]
+    strategy = typing_options.get_strategy_for_channel("msteams")
+    assert strategy.initial_delay_ms == 0
+    assert strategy.interval_ms == 3000
+
+    async def run():
+        sent = []
+        started = asyncio.Event()
+        refreshed = asyncio.Event()
+
+        async def send_activities(context, activities):
+            sent.extend(activities)
+            started.set()
+            if sum(a.type == ActivityTypes.typing for a in sent) >= 2:
+                refreshed.set()
+            return [ResourceResponse(id="response") for _ in activities]
+
+        adapter = Mock(send_activities=AsyncMock(side_effect=send_activities))
+        context = TurnContext(
+            adapter,
+            Activity(
+                type=ActivityTypes.message,
+                channel_id="msteams",
+                service_url="https://smba.trafficmanager.net/teams/",
+                recipient=ChannelAccount(id="bot-id"),
+                from_property=ChannelAccount(id="user-id"),
+                conversation=ConversationAccount(id="chat-id"),
+            ),
+        )
+
+        async def process():
+            async with TypingIndicator(context, typing_options=typing_options):
+                await asyncio.wait_for(started.wait(), timeout=0.5)
+                await asyncio.wait_for(refreshed.wait(), timeout=5)
+                if outcome == "reply":
+                    await context.send_activity("Answer")
+                    count = len(sent)
+                    await asyncio.sleep(3.1)
+                    assert len(sent) == count
+                elif outcome == "error":
+                    raise RuntimeError("Model failed")
+                else:
+                    raise asyncio.CancelledError()
+
+        if outcome == "error":
+            with pytest.raises(RuntimeError, match="Model failed"):
+                await process()
+        elif outcome == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await process()
+        else:
+            await process()
+
+        assert sent[0].type == ActivityTypes.typing
+        assert sent[0].conversation.id == "chat-id"
+        assert sum(a.type == ActivityTypes.typing for a in sent) == 2
+        assert [a.text for a in sent if a.type == ActivityTypes.message] == (
+            ["Answer"] if outcome == "reply" else []
+        )
+        count = len(sent)
+        await asyncio.sleep(3.1)
+        assert len(sent) == count
+
+    asyncio.run(run())
