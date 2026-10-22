@@ -4,5 +4,5 @@
   "python.testing.pytestArgs": [
     "tests"
   ],
-  "python.terminal.useEnvFile": true
+  "python.terminal.useEnvFile": false
 }

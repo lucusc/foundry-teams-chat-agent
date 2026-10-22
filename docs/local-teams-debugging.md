@@ -54,7 +54,7 @@ The project endpoint has the form
 
 ## Start and verify
 
-1. Stop Playground; both workflows overwrite the root `.env`.
+1. Stop Playground; both workflows overwrite the root `.localConfigs`.
 2. Sign in to Microsoft 365 and Azure in VS Code's **Agents Toolkit** view.
 3. In **Run and Debug**, choose **Debug in Teams (Edge)**, **(Chrome)**, or
    **(Desktop)**, then press **F5**.
@@ -72,7 +72,7 @@ group history is sent to the live Foundry model.
 
 ## Authentication and limitations
 
-The workflow generates the ignored root `.env` with `GRAPH_AUTH_MODE=bot`.
+The workflow generates the ignored root `.localConfigs` with `GRAPH_AUTH_MODE=bot`.
 Graph history uses the local bot app's generated secret; Foundry uses your
 developer credential. Never copy the secret into tracked files or set
 `AZURE_CLIENT_SECRET` globally.
@@ -87,7 +87,7 @@ file permissions to work around this.
 
 | Symptom | Check |
 | --- | --- |
-| Bot returns 401 | Restart the full debug workflow; root `.env` must contain the bot client ID, secret, and `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID`. |
+| Bot returns 401 | Restart the full debug workflow; root `.localConfigs` must contain the bot client ID, secret, and `CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID`. |
 | Graph uses `AzureCliCredential` or returns 403 | Restart until startup shows `Microsoft Graph authentication mode: bot`; verify local-app consent in that chat. |
 | Foundry returns 401/403 | Check Azure CLI sign-in, the project endpoint, and your project-scoped Foundry User role; allow propagation time. |
 | Group chat has no reply | Use a real mention and approve chat consent. Update/reinstall the local app if its permissions changed. |

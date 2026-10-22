@@ -13,10 +13,11 @@ deploy:
       nodejs:
         symlinkDir: ./devTools/nodejs
 
-  # Generate runtime environment variables
+  # Generate runtime environment variables. Not ./.env: the ATK CLI loads
+  # <cwd>/.env into process.env, which overrides env/.env.<environment>.
   - uses: file/createOrUpdateEnvironmentFile
     with:
-      target: ./.env
+      target: ./.localConfigs
       envs:
         CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID: ""
         CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET: ""

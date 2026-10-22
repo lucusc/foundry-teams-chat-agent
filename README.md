@@ -190,7 +190,7 @@ packages the app, and starts the Python process.
 > **Requires:** A Teams tenant that allows custom app installation, the local
 > bot app registration, a running development tunnel, and installation of the
 > local app with `ChatMessage.Read.Chat` consent in each test group chat. Stop
-> Playground before switching workflows; both generate the root `.env`.
+> Playground before switching workflows; both generate the root `.localConfigs`.
 >
 > **Limitations:** Local testing uses a separate app identity from the deployed
 > managed identity; each app needs its own chat installation and consent.

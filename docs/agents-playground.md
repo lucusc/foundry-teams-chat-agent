@@ -86,5 +86,5 @@ publicly. Outbound Foundry calls still use your Azure credential.
 | Group-history request fails | Playground cannot grant real Teams `ChatMessage.Read.Chat` consent. Use [local Teams](local-teams-debugging.md). |
 | OneDrive/SharePoint sign-in is unavailable | Expected: Teams SSO exists only in the [deployed environment](deploy-environment.md). |
 
-Playground and local Teams both overwrite the root `.env`; do not run them
+Playground and local Teams both overwrite the root `.localConfigs`; do not run them
 at the same time.

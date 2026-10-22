@@ -4,6 +4,10 @@ Deploy the Teams bot to Azure. No local debugger, Playground, or tunnel is
 involved. Run commands from the repository root in the same Bash terminal
 (Linux, macOS, or Windows with WSL).
 
+> ATK loads `./.env` and variables already set in your shell ahead of
+> `env/.env.<environment>`. Before running `atk`, make sure there is no root
+> `.env` and `env | grep BOT_ID` prints nothing (`unset BOT_ID` if it does).
+
 ## Prerequisites
 
 - Install Python 3.11, Node.js 22 LTS, Azure CLI, and the ATK CLI:
@@ -216,6 +220,45 @@ wider distribution.
 
 ## Troubleshooting
 
+### Trace a message that gets no reply
+
+Open the deployed **App Service > Monitoring > App Service logs** and enable
+filesystem application logging (Information) and web-server logging. Then open
+**Log stream**, or run:
+
+```bash
+az webapp log tail --resource-group "$APP_RG" --name "$WEBAPP_NAME"
+```
+
+Wait for startup to finish and pause deployments before sending a non-sensitive
+personal-chat message. Application diagnostics use a generated `request_id` to
+correlate HTTP and agent stage markers, including work on background threads.
+The new markers omit message text, headers, tokens, file contents, and user/chat
+IDs. Existing SDK and exception logs may contain additional details; handle log
+exports as sensitive.
+
+| Last marker or outcome | Where to investigate |
+| --- | --- |
+| No `HTTP request started` | Confirm logging is working, the installed Teams app identity, Azure Bot Teams channel status, and the messaging endpoint. Absence alone does not prove delivery failed. |
+| Request finishes with 401/403 before `HTTP request authenticated` | Inbound authentication or middleware rejection; verify bot identity/tenant settings. Never disable JWT validation. |
+| `HTTP request authenticated`, but no `message_handler_started` | SDK activity processing, before-turn work, or sign-in routing. |
+| `message_ignored` | Message eligibility: channels are unsupported; group messages require a real bot mention. |
+| `group_message_prefetch_started` or `group_history_started` without completion | Graph credentials, chat-specific consent, or Graph connectivity. |
+| `connector_token_started` or `user_graph_token_started` without completion | Bot Connector identity or delegated file sign-in, respectively. |
+| `file_processing_started` without completion | Attachment processing. |
+| `foundry_started` without completion | Foundry credentials, model deployment, or connectivity. |
+| `reply_started` without `reply_completed` | Outbound Bot Connector delivery/authentication. |
+
+`HTTP request finished` includes HTTP status and elapsed milliseconds; an HTTP
+success alone does not establish that a chat reply was delivered. Match the
+request ID and check stage markers and exception logs. `Connections Map: []`
+is not itself an error: the SDK uses the default service connection. With
+managed identity, the EnvironmentCredential "incomplete environment" INFO line
+is also expected. An unauthenticated curl probe can correctly return 401.
+
+Deploy Python logging changes using the code-update steps above. Reduce or
+disable diagnostic logging when finished to limit retention and log volume.
+
 | Symptom | Check |
 | --- | --- |
 | Authorization failure during provisioning | ATK accounts, selected subscription/group, Azure permissions, and Entra app-registration policy. |
@@ -224,6 +267,7 @@ wider distribution.
 | Group history fails | The correct environment's app must have consent in that chat. Its `webApplicationInfo.id` must match the generated sign-in app. |
 | Repeated sign-in or admin approval prompt | Test `GraphDelegated`; verify the latest package and tenant delegated-consent policy. Never substitute application file permissions. |
 | App fails to start | ATK build output and App Service logs; a 404 at `/` alone is not a startup failure. |
+| Web Chat works but Teams produces no request logs | Inspect `manifest.json` inside the actual Teams ZIP. Its `bots[0].botId` must match Azure Bot's Microsoft App ID, not the local-debug bot. ATK loads `<repo>/.env` and existing shell variables ahead of `env/.env.<environment>`, so a stale root `.env` or exported `BOT_ID` overrides the selected environment. Local debugging now writes `.localConfigs` instead; delete any leftover root `.env`, `unset` stale `BOT_ID`/`AZURE_AI_*` variables, then provision or package again, verify the ZIP, and update the installed Teams app. Do not change the Azure Bot identity to match the local bot. |
 | Settings do not change | Provision the selected environment; deploying code alone does not update App Service settings. |
 
 ## Remove a test environment
