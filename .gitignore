@@ -16,6 +16,7 @@ venv/
 # Microsoft 365 Agents Toolkit local state and secrets
 .env
 .localConfigs
+env/.env.dev
 env/.env.*.user
 env/.env.local
 env/.env.playground

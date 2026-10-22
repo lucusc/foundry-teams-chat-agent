@@ -90,9 +90,11 @@ az group create --name "$APP_RG" --location "$LOCATION"
 ```
 
 **New deployment only:** the next block replaces `env/.env.$ENVIRONMENT`.
-The repository's existing dev file may contain another deployment's IDs.
-Replace it only if you intend to create a fresh dev system, not update that
-system. Do not copy generated dev IDs or its suffix into staging.
+An existing local dev file may contain another deployment's IDs. Replace it
+only if you intend to create a fresh dev system, not update that system.
+Do not copy generated dev IDs or its suffix into staging. A sanitized
+[dev example](../env/.env.dev.example) is also available to copy and fill in
+manually; generated IDs should stay blank until provisioning.
 
 ```bash
 RESOURCE_SUFFIX=$(python3.11 -c 'import secrets; print(secrets.token_hex(3))')
@@ -118,9 +120,12 @@ EOF
   keep it stable after provisioning.
 - The SharePoint prefix is a name such as `contoso`, not a URL.
   History count must be an integer from `1` to `50`.
-- Cloud environment files are not ignored. Review before committing; never
-  store secrets in them. Personal/secret values belong in the ignored
-  `env/.env.<environment>.user` file.
+- `env/.env.dev` is ignored; only its sanitized example belongs in source
+  control. Other cloud environment files (such as `env/.env.staging`) are
+  not ignored by default. Review them before committing, and add ignore
+  rules if their deployment settings should remain local. Never store
+  secrets in cloud environment files. Personal/secret values belong in the
+  ignored `env/.env.<environment>.user` file.
 
 ## 3. Provision, grant access, and deploy code
 

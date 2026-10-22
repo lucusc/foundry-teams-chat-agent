@@ -69,6 +69,19 @@ Set these values for the workflow you want to run:
 - Agents Playground: `env/.env.playground.user`
 - Deployed Teams testing: `env/.env.dev`
 
+For a new dev deployment, copy the sanitized
+[example](env/.env.dev.example) to the ignored `env/.env.dev` and replace its
+placeholders:
+
+```bash
+cp -n env/.env.dev.example env/.env.dev
+```
+
+Do not overwrite an existing deployment's settings or generated IDs. Follow
+[Deploy an environment](docs/deploy-environment.md) for provisioning, or to
+generate fresh settings interactively. Keep secrets in `env/.env.dev.user`,
+which is also ignored.
+
 ```dotenv
 AZURE_AI_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>
 AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-4.1-mini
