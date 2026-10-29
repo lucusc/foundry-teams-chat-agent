@@ -12,6 +12,23 @@ class Config:
         self.model_deployment_name = self._required(
             env, "AZURE_AI_MODEL_DEPLOYMENT_NAME"
         )
+        self.general_agent_name = env.get(
+            "AZURE_AI_GENERAL_AGENT_NAME", "teams-poc-general"
+        ).strip()
+        self.summary_agent_name = env.get(
+            "AZURE_AI_SUMMARY_AGENT_NAME", "teams-poc-summary"
+        ).strip()
+        for setting, name in (
+            ("AZURE_AI_GENERAL_AGENT_NAME", self.general_agent_name),
+            ("AZURE_AI_SUMMARY_AGENT_NAME", self.summary_agent_name),
+        ):
+            if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}", name):
+                raise RuntimeError(
+                    f"{setting} must be 1-63 letters, digits, underscores, or "
+                    "hyphens, starting with a letter or digit"
+                )
+        if self.general_agent_name == self.summary_agent_name:
+            raise RuntimeError("The general and summary agent names must be different")
         self.managed_identity_client_id = env.get("AZURE_CLIENT_ID", "").strip() or None
         self.sharepoint_tenant_domain = env.get(
             "SHAREPOINT_TENANT_DOMAIN", ""

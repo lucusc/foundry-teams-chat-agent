@@ -3,15 +3,16 @@
 ## The design in one minute
 
 **The bot reads attachments; Foundry analyzes their contents.** This Python
-demo calls a Foundry model through `AIProjectClient` and the Responses API.
-It doesn't require a separate Foundry Agent Service agent or File Search index.
+demo automatically selects between two Foundry-managed prompt agents through
+`AIProjectClient` and the Responses API: general help and summarization.
+It requires those two Agent Service agents but no File Search index.
 
 | Operation | Authorization |
 | --- | --- |
 | Personal-chat upload | Teams supplies a short-lived pre-authenticated download URL; no Graph file permission. |
 | Read the triggering group message, recent history, and inline hosted images | App-only `ChatMessage.Read.Chat` resource-specific consent (RSC), approved for that chat. |
 | Read an attached OneDrive/SharePoint reference | Sender's delegated Graph token, obtained through Teams SSO and the Azure Bot OAuth connection's on-behalf-of exchange. |
-| Call the Foundry model | Bot managed identity with project-scoped **Foundry User** RBAC. |
+| Classify the request and call the selected Foundry agent | Bot managed identity with project-scoped **Foundry User** RBAC. |
 
 **Never grant Graph application `Files.Read.All` or `Sites.Read.All`.**
 Delegated permissions with those names are intentional: Graph limits each
@@ -34,10 +35,15 @@ Application code further limits file reads to the current message's attachments.
 3. **Configure a fresh bot environment.** Follow
    [deployment steps 1-2](deploy-environment.md#1-choose-the-environment-and-sign-in).
    Set `AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME`,
+   `AZURE_AI_GENERAL_AGENT_NAME=teams-poc-general`,
+   `AZURE_AI_SUMMARY_AGENT_NAME=teams-poc-summary`,
    `SHAREPOINT_TENANT_DOMAIN` (the prefix, not a URL), and a unique resource
    suffix in the chosen ATK environment. The project endpoint ends in
    `/api/projects/<project>`. Don't copy another deployment's generated IDs or
    overwrite an existing environment unintentionally.
+   With developer Foundry access, run the
+   [two-agent setup](../foundry-platform/README.md#create-the-two-example-agents)
+   before using the bot.
 4. **Provision the Teams bot with ATK.** From the repository root, run
    `atk provision --env dev -i false` for a configured dev environment.
    [The templates](../infra/azure.bicep) create App Service, a user-assigned

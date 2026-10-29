@@ -11,6 +11,12 @@
     "azureAiModelDeploymentName": {
       "value": "${{AZURE_AI_MODEL_DEPLOYMENT_NAME}}"
     },
+    "azureAiGeneralAgentName": {
+      "value": "${{AZURE_AI_GENERAL_AGENT_NAME}}"
+    },
+    "azureAiSummaryAgentName": {
+      "value": "${{AZURE_AI_SUMMARY_AGENT_NAME}}"
+    },
     "graphHistoryMessageCount": {
       "value": "${{GRAPH_HISTORY_MESSAGE_COUNT}}"
     },

@@ -5,8 +5,12 @@ param resourceBaseName string
 
 @description('Microsoft Foundry project endpoint used by the agent')
 param azureAiProjectEndpoint string
-@description('Model deployment in the Microsoft Foundry project')
+@description('Model deployment used to classify requests for agent routing')
 param azureAiModelDeploymentName string
+@description('Existing Foundry prompt agent for general questions')
+param azureAiGeneralAgentName string = 'teams-poc-general'
+@description('Existing Foundry prompt agent for summaries')
+param azureAiSummaryAgentName string = 'teams-poc-summary'
 param graphHistoryMessageCount string = '10'
 @description('SharePoint tenant prefix, for example contoso')
 param sharePointTenantDomain string = ''
@@ -108,6 +112,14 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
         {
           name: 'AZURE_AI_MODEL_DEPLOYMENT_NAME'
           value: azureAiModelDeploymentName
+        }
+        {
+          name: 'AZURE_AI_GENERAL_AGENT_NAME'
+          value: azureAiGeneralAgentName
+        }
+        {
+          name: 'AZURE_AI_SUMMARY_AGENT_NAME'
+          value: azureAiSummaryAgentName
         }
         {
           name: 'GRAPH_HISTORY_MESSAGE_COUNT'

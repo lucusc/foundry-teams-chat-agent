@@ -107,6 +107,8 @@ AZURE_RESOURCE_GROUP_NAME=$APP_RG
 RESOURCE_SUFFIX=$RESOURCE_SUFFIX
 AZURE_AI_PROJECT_ENDPOINT=$PROJECT_ENDPOINT
 AZURE_AI_MODEL_DEPLOYMENT_NAME=$MODEL_DEPLOYMENT
+AZURE_AI_GENERAL_AGENT_NAME=teams-poc-general
+AZURE_AI_SUMMARY_AGENT_NAME=teams-poc-summary
 GRAPH_HISTORY_MESSAGE_COUNT=10
 SHAREPOINT_TENANT_DOMAIN=$SHAREPOINT_TENANT_DOMAIN
 EOF
@@ -128,6 +130,20 @@ EOF
   ignored `env/.env.<environment>.user` file.
 
 ## 3. Provision, grant access, and deploy code
+
+Create the two prompt agents using a developer identity with project-scoped
+**Foundry User** access before deploying the bot (see the
+[agent setup](../foundry-platform/README.md#create-the-two-example-agents)).
+The Python environment must have the application dependencies installed:
+
+```bash
+python foundry-platform/create_agents.py --env-file "env/.env.$ENVIRONMENT" --smoke-test
+```
+
+For an existing environment, add `AZURE_AI_GENERAL_AGENT_NAME` and
+`AZURE_AI_SUMMARY_AGENT_NAME` as shown above while preserving generated IDs.
+Reprovision to apply the two app settings, then deploy the updated bot code.
+Agent creation alone does not update the App Service code.
 
 ```bash
 atk provision --env "$ENVIRONMENT" -i false

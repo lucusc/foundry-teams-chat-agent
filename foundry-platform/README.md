@@ -4,7 +4,8 @@ This infrastructure-only AZD project owns the shared Microsoft Foundry account,
 project, and model deployment. The Teams application remains managed by
 Microsoft 365 Agents Toolkit at the repository root.
 
-This guide covers only the model infrastructure. To run the bot, use
+AZD manages the model infrastructure; a separate Python script creates the two
+Foundry-managed prompt agents described below. To run the bot, use
 [Agents Playground](../docs/agents-playground.md),
 [local Teams debugging](../docs/local-teams-debugging.md), or
 [deploy a dev or staging environment](../docs/deploy-environment.md).
@@ -75,6 +76,38 @@ Provisioning does not grant these callers access automatically.
 AZD saves environment settings and deployment outputs under
 `foundry-platform/.azure/`, which is ignored by Git. It does not update the
 ATK environment files automatically.
+
+## Create the two example agents
+
+After granting your developer identity project-scoped **Foundry User** access,
+configure the endpoint and model in the chosen ATK environment and add:
+
+```dotenv
+AZURE_AI_GENERAL_AGENT_NAME=teams-poc-general
+AZURE_AI_SUMMARY_AGENT_NAME=teams-poc-summary
+```
+
+From the repository root, activate the Python environment from
+[Local development](../docs/local-development.md), then run:
+
+```bash
+python foundry-platform/create_agents.py --env-file env/.env.dev --smoke-test
+```
+
+Use `env/.env.local.user` or `env/.env.playground.user` for those workflows.
+The script registers two prompt agents in the existing project: a concise
+general assistant and a chat/file summarizer. Both execute in Foundry Agent
+Service, with no custom container, tools, or File Search index. The script
+registers versions of both configured agent names; identical definitions may
+reuse existing versions. The bot references their latest versions. Use dedicated
+POC names, not another app's agents. If creation fails partway, the error is
+surfaced; rerunning registers both definitions again.
+
+The optional smoke test verifies automatic routing and a response from each
+remote agent. It uses synthetic content and incurs model charges. The bot uses
+the configured model only to classify the current request, then invokes one
+agent by name; the agent's own model/instructions come from Foundry.
+This command does not deploy the Teams bot or alter its permissions.
 
 ## Update or adopt an existing platform
 

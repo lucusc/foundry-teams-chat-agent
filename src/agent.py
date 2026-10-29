@@ -41,7 +41,7 @@ from files import (
     should_process_message,
 )
 from foundry import (
-    FoundryModelGateway,
+    FoundryAgentGateway,
     GraphChatHistory,
     is_group_conversation,
     normalize_message,
@@ -69,10 +69,12 @@ credential = DefaultAzureCredential(
 # A7: this TokenCredential obtains Foundry tokens for the AI-project audience.
 # The deployed caller is the UAMI authorized by the Foundry User RBAC assignment;
 # local development uses the developer's Azure CLI or VS Code credential.
-gateway = FoundryModelGateway(
+gateway = FoundryAgentGateway(
     config.project_endpoint,
     config.model_deployment_name,
     credential,
+    config.general_agent_name,
+    config.summary_agent_name,
 )
 # SECURITY: Microsoft Graph access is split on purpose. See
 # docs/file-access-security.md.

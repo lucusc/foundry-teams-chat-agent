@@ -36,6 +36,15 @@ def test_agent_infrastructure_uses_managed_identity_for_foundry():
     assert "name: 'AZURE_CLIENT_ID'" in bicep
     assert "name: 'AZURE_AI_PROJECT_ENDPOINT'" in bicep
     assert "name: 'AZURE_AI_MODEL_DEPLOYMENT_NAME'" in bicep
+    parameters = json.loads((ROOT / "infra/azure.parameters.json").read_text())
+    for setting, parameter in (
+        ("AZURE_AI_GENERAL_AGENT_NAME", "azureAiGeneralAgentName"),
+        ("AZURE_AI_SUMMARY_AGENT_NAME", "azureAiSummaryAgentName"),
+    ):
+        assert f"name: '{setting}'" in bicep
+        assert parameters["parameters"][parameter]["value"] == "${{" + setting + "}}"
+        for workflow in ("m365agents.local.yml", "m365agents.playground.yml"):
+            assert f"{setting}: ${{{{{setting}}}}}" in (ROOT / workflow).read_text()
     assert "AZURE_OPENAI_API_KEY" not in bicep
 
 

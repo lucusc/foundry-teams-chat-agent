@@ -1,7 +1,7 @@
 # Demo Foundry Agent
 
 A Microsoft 365 Agents Toolkit Python proof of concept that connects Teams to a
-shared Microsoft Foundry project.
+shared Microsoft Foundry project with two Foundry-managed prompt agents.
 
 > [!WARNING]
 > **Proof of concept (POC) - work in progress.**
@@ -14,6 +14,8 @@ Choose the guide for your task:
 
 - [Teams + Foundry file-access TL;DR](docs/teams-foundry-file-access-tldr.md):
   the setup sequence, permission model, and demo limitations.
+- [Agent hosting decision](docs/agent-hosting-decision.md): what App Service
+  hosts, the direct Foundry alternative, and when to extract an M365 Context Service.
 - [Local development](docs/local-development.md): Python setup and unit tests.
 - [Agents Playground](docs/agents-playground.md): local simulator, without Teams.
 - [Local Teams debugging](docs/local-teams-debugging.md): real chats with local breakpoints.
@@ -23,6 +25,9 @@ Choose the guide for your task:
 ## Behavior
 
 - Uses `AIProjectClient` and the Responses API with `DefaultAzureCredential`.
+  A model-based router selects one of two remote Foundry prompt agents:
+  **General Assistant** for questions/drafting or **Summary Assistant** for
+  recaps, key points, decisions, and action items. Replies identify the agent.
 - Answers personal-chat messages without reading Microsoft Graph history.
 - Responds in group chats only when mentioned.
 - Explicitly enables the SDK typing indicator with no initial delay and a
@@ -48,6 +53,48 @@ Choose the guide for your task:
 The Teams agent lifecycle is rooted in `m365agents*.yml`. The shared Foundry
 account, project, and model are independently managed with AZD under
 [`foundry-platform/`](foundry-platform/README.md).
+
+### Two agents in Foundry
+
+```mermaid
+flowchart LR
+    Teams[Teams chat] --> Bot[Teams bot - App Service]
+    Bot --> Router[Foundry model - classify current request]
+    Router --> Choice{Selected agent}
+    Choice --> General[Foundry: teams-poc-general]
+    Choice --> Summary[Foundry: teams-poc-summary]
+    General --> Reply[Bot replies to Teams]
+    Summary --> Reply
+```
+
+Both agents' model and instructions live in Foundry Agent Service, not in the
+bot runtime. These are **prompt agents**, not container-based Hosted Agents.
+They share a model deployment but have distinct names and instructions.
+The bot remains responsible for Teams authentication, Graph consent, and
+attachment downloads; only the selected agent receives history and file bytes.
+The classifier sees only the current message. Each turn makes two inference
+calls (classification plus agent response), adding latency and token cost.
+No shared Foundry conversation or previous-response ID is reused across turns.
+Routing errors are reported rather than silently answered by a direct model.
+
+After configuring a project/model and obtaining project-scoped Foundry User
+access, create the agents from the repository root with the Python environment
+from [Local development](docs/local-development.md):
+
+```bash
+python foundry-platform/create_agents.py --env-file env/.env.dev --smoke-test
+```
+
+For local workflows, pass the corresponding user settings file instead.
+This registers a version of each named agent, and the bot uses the latest
+version. Identical definitions may reuse an existing version. It does not create
+Azure infrastructure, grant roles, deploy
+the Teams bot, or configure Graph permissions. Do not reuse names belonging to
+unrelated agents. The smoke test calls both routes with synthetic content
+and incurs model charges.
+
+Try `Explain what a proof of concept is` (general) and `Recap the decisions
+and next steps in this chat` (summary; requires consenting group history).
 
 ### Current chat and file capabilities
 
@@ -85,10 +132,21 @@ which is also ignored.
 ```dotenv
 AZURE_AI_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>
 AZURE_AI_MODEL_DEPLOYMENT_NAME=gpt-4.1-mini
+AZURE_AI_GENERAL_AGENT_NAME=teams-poc-general
+AZURE_AI_SUMMARY_AGENT_NAME=teams-poc-summary
 GRAPH_HISTORY_MESSAGE_COUNT=10
 SHAREPOINT_TENANT_DOMAIN=<tenant-prefix>
 MAX_FILE_SIZE_BYTES=20971520
 ```
+
+The model deployment setting is used by the bot's router and by the setup
+script when creating agents; it must support structured JSON output. The
+agents' model must also support PDF/image input to use attachments.
+The two agent names default to those above in
+Python; set them explicitly in ATK environments so deployment substitutions
+can resolve them. Create the agents before using the bot. To change their
+instructions, edit [create_agents.py](foundry-platform/create_agents.py) and
+rerun it; do not override the agent instructions in the bot's inference call.
 
 `SHAREPOINT_TENANT_DOMAIN` is the SharePoint tenant prefix (for example,
 `contoso`, not a URL). `MAX_FILE_SIZE_BYTES` defaults to 20 MiB. Supported

@@ -43,6 +43,8 @@ EOF
 cat > env/.env.local.user <<EOF
 AZURE_AI_PROJECT_ENDPOINT=$PROJECT_ENDPOINT
 AZURE_AI_MODEL_DEPLOYMENT_NAME=$MODEL_DEPLOYMENT
+AZURE_AI_GENERAL_AGENT_NAME=teams-poc-general
+AZURE_AI_SUMMARY_AGENT_NAME=teams-poc-summary
 GRAPH_HISTORY_MESSAGE_COUNT=10
 SHAREPOINT_TENANT_DOMAIN=$SHAREPOINT_TENANT_DOMAIN
 EOF
@@ -51,6 +53,12 @@ EOF
 For an existing setup, edit these files and retain generated IDs and secrets.
 The project endpoint has the form
 `https://<account>.services.ai.azure.com/api/projects/<project>`.
+
+Register the two Foundry prompt agents before starting:
+
+```bash
+python foundry-platform/create_agents.py --env-file env/.env.local.user --smoke-test
+```
 
 ## Start and verify
 

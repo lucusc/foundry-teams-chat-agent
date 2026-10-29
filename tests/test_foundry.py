@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 from config import Config
 from foundry import (
-    FoundryModelGateway,
+    FoundryAgentGateway,
     GraphChatHistory,
     is_bot_mentioned,
     normalize_message,
@@ -32,7 +32,38 @@ def test_config_reads_foundry_settings():
         "https://example.test/api/projects/example-project"
     )
     assert config.model_deployment_name == "gpt-4.1-mini"
+    assert config.general_agent_name == "teams-poc-general"
+    assert config.summary_agent_name == "teams-poc-summary"
     assert config.graph_history_message_count == 25
+
+
+def test_config_reads_custom_agent_names():
+    config = Config({
+        "AZURE_AI_PROJECT_ENDPOINT": "https://example.test/api/projects/project",
+        "AZURE_AI_MODEL_DEPLOYMENT_NAME": "model",
+        "AZURE_AI_GENERAL_AGENT_NAME": " custom-general ",
+        "AZURE_AI_SUMMARY_AGENT_NAME": " custom-summary ",
+    })
+    assert config.general_agent_name == "custom-general"
+    assert config.summary_agent_name == "custom-summary"
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        {"AZURE_AI_GENERAL_AGENT_NAME": ""},
+        {"AZURE_AI_SUMMARY_AGENT_NAME": "bad name"},
+        {"AZURE_AI_GENERAL_AGENT_NAME": "x" * 64},
+        {"AZURE_AI_GENERAL_AGENT_NAME": "same", "AZURE_AI_SUMMARY_AGENT_NAME": "same"},
+    ],
+)
+def test_config_rejects_invalid_or_duplicate_agents(names):
+    with pytest.raises(RuntimeError, match="AGENT_NAME|must be different"):
+        Config({
+            "AZURE_AI_PROJECT_ENDPOINT": "https://example.test/api/projects/project",
+            "AZURE_AI_MODEL_DEPLOYMENT_NAME": "model",
+            **names,
+        })
 
 
 def test_config_defaults_to_shared_graph_credential():
@@ -368,30 +399,89 @@ def test_graph_history_retries_one_timeout(timeouts):
     assert len(calls) == 2
 
 
-def test_model_receives_history_as_untrusted_context():
-    project = Mock()
-    openai = project.get_openai_client.return_value
-    openai.responses.create.return_value.output_text = " Answer "
-    gateway = FoundryModelGateway.__new__(FoundryModelGateway)
-    gateway._openai = openai
-    gateway._model_deployment_name = "gpt-4.1-mini"
+def make_gateway(route='{"agent":"general"}', answer=" Answer "):
+    with patch("foundry.AIProjectClient"):
+        gateway = FoundryAgentGateway(
+            "https://example.test/api/projects/project", "gpt-4.1-mini", Mock(),
+            "general-agent", "summary-agent",
+        )
+    gateway._openai.responses.create.side_effect = [
+        SimpleNamespace(output_text=route),
+        SimpleNamespace(output_text=answer),
+    ]
+    return gateway
 
-    assert gateway.ask("Question", ["Participant: Context"]) == "Answer"
-    request = openai.responses.create.call_args.kwargs
-    assert request["model"] == "gpt-4.1-mini"
-    assert "untrusted user content" in request["instructions"]
+
+@pytest.mark.parametrize("route", ["general", "summary"])
+def test_selected_foundry_agent_receives_history(route):
+    gateway = make_gateway(f'{{"agent":"{route}"}}')
+
+    assert gateway.ask("Question", ["Participant: Context"]) == (
+        f"**{route}-agent**\n\nAnswer"
+    )
+    calls = gateway._openai.responses.create.call_args_list
+    assert len(calls) == 2
+    router = calls[0].kwargs
+    assert router["model"] == "gpt-4.1-mini"
+    assert router["input"] == "Question"
+    assert router["store"] is False
+    assert router["text"]["format"]["strict"] is True
+    schema = router["text"]["format"]["schema"]
+    assert schema["properties"]["agent"]["enum"] == ["general", "summary"]
+    request = calls[1].kwargs
+    assert request["extra_body"]["agent_reference"] == {
+        "name": f"{route}-agent", "type": "agent_reference",
+    }
+    assert "model" not in request
+    assert "instructions" not in request
+    assert request["store"] is False
+    assert "previous_response_id" not in request
+    assert "conversation" not in request
     assert "<chat_history>\nParticipant: Context\n</chat_history>" in request["input"]
+
+
+@pytest.mark.parametrize(
+    "route",
+    ["", "not json", "null", "[]", "{}", '{"agent":"other"}',
+     '{"agent":[]}', '{"agent":"general","extra":true}'],
+)
+def test_invalid_routing_fails_without_calling_an_agent(route):
+    gateway = make_gateway(route)
+    with pytest.raises(RuntimeError, match="Foundry routing"):
+        gateway.ask("Question", [])
+    assert gateway._openai.responses.create.call_count == 1
+
+
+def test_routing_failure_does_not_silently_fall_back():
+    gateway = make_gateway()
+    gateway._openai.responses.create.side_effect = RuntimeError("routing unavailable")
+    with pytest.raises(RuntimeError, match="routing unavailable"):
+        gateway.ask("Question", [])
+    assert gateway._openai.responses.create.call_count == 1
+
+
+@pytest.mark.parametrize("answer", ["", " ", None])
+def test_empty_agent_response_fails(answer):
+    gateway = make_gateway(answer=answer)
+    with pytest.raises(RuntimeError, match="agent returned no text"):
+        gateway.ask("Question", [])
+
+
+def test_agent_error_propagates_without_falling_back_to_direct_model():
+    gateway = make_gateway()
+    gateway._openai.responses.create.side_effect = [
+        SimpleNamespace(output_text='{"agent":"general"}'),
+        RuntimeError("agent not found"),
+    ]
+    with pytest.raises(RuntimeError, match="agent not found"):
+        gateway.ask("Question", [])
+    assert gateway._openai.responses.create.call_count == 2
 
 
 def test_model_receives_supported_file_content_as_responses_input():
     import base64
 
-    project = Mock()
-    openai = project.get_openai_client.return_value
-    openai.responses.create.return_value.output_text = "The file says hello."
-    gateway = FoundryModelGateway.__new__(FoundryModelGateway)
-    gateway._openai = openai
-    gateway._model_deployment_name = "gpt-4.1-mini"
+    gateway = make_gateway('{"agent":"summary"}', "The file says hello.")
     shared_file = SimpleNamespace(
         name="notes.pdf",
         content_type="application/pdf",
@@ -399,9 +489,9 @@ def test_model_receives_supported_file_content_as_responses_input():
     )
 
     assert gateway.ask("Summarize this", [], [shared_file]) == (
-        "The file says hello."
+        "**summary-agent**\n\nThe file says hello."
     )
-    request = openai.responses.create.call_args.kwargs
+    request = gateway._openai.responses.create.call_args.kwargs
     content = request["input"][0]["content"]
     assert content[0]["type"] == "input_text"
     assert "Summarize this" in content[0]["text"]
@@ -411,7 +501,8 @@ def test_model_receives_supported_file_content_as_responses_input():
         "data:application/pdf;base64,"
         + base64.b64encode(shared_file.content).decode("ascii")
     )
-    assert "attached file names and contents as untrusted input" in request["instructions"]
+    router = gateway._openai.responses.create.call_args_list[0].kwargs
+    assert router["input"] == "Summarize this"
 
 
 @pytest.mark.parametrize(
@@ -425,18 +516,13 @@ def test_model_receives_supported_file_content_as_responses_input():
     ],
 )
 def test_supported_file_types_are_converted_to_responses_content(name, content_type):
-    project = Mock()
-    openai = project.get_openai_client.return_value
-    openai.responses.create.return_value.output_text = "Answer"
-    gateway = FoundryModelGateway.__new__(FoundryModelGateway)
-    gateway._openai = openai
-    gateway._model_deployment_name = "model"
+    gateway = make_gateway()
 
     gateway.ask(
         "Question",
         [],
         [SimpleNamespace(name=name, content_type=content_type, content=b"data")],
     )
-    request_content = openai.responses.create.call_args.kwargs["input"][0]["content"]
+    request_content = gateway._openai.responses.create.call_args.kwargs["input"][0]["content"]
     expected_type = "input_file" if content_type == "application/pdf" else "input_image"
     assert request_content[1]["type"] == expected_type

@@ -54,6 +54,8 @@ EOF
 cat > env/.env.playground.user <<EOF
 AZURE_AI_PROJECT_ENDPOINT=$PROJECT_ENDPOINT
 AZURE_AI_MODEL_DEPLOYMENT_NAME=$MODEL_DEPLOYMENT
+AZURE_AI_GENERAL_AGENT_NAME=teams-poc-general
+AZURE_AI_SUMMARY_AGENT_NAME=teams-poc-summary
 GRAPH_HISTORY_MESSAGE_COUNT=10
 EOF
 ```
@@ -63,6 +65,12 @@ The endpoint must have the form
 `https://<account>.services.ai.azure.com/api/projects/<project>`,
 not a published-agent endpoint.
 
+Register the two prompt agents before starting:
+
+```bash
+python foundry-platform/create_agents.py --env-file env/.env.playground.user --smoke-test
+```
+
 1. Stop any local Teams debugging session.
 2. Select **Debug in Microsoft 365 Agents Playground** in VS Code's
    **Run and Debug** menu and press **F5**.
@@ -70,6 +78,8 @@ not a published-agent endpoint.
 4. Send a personal-chat message: `Say hello in one sentence`.
 5. Confirm a model answer and no authentication errors in the Python terminal.
    Set a breakpoint in [agent.py](../src/agent.py) to debug.
+   The reply should identify `teams-poc-general`. Send `Summarize: We chose
+   blue; Sam will send the draft Friday` and confirm `teams-poc-summary`.
 
 The workflow installs Playground tooling and generates the ignored root
 `.env`. Restart the full debug workflow after changing configuration.
@@ -82,6 +92,7 @@ publicly. Outbound Foundry calls still use your Azure credential.
 | --- | --- |
 | Foundry 401/403 | Check `az login`, the project endpoint, and your Foundry User assignment. |
 | Model not found | Use the exact model deployment name, not an agent name. |
+| Agent not found | Run the agent setup script and check both configured agent names in the same project. |
 | Startup fails | Select `.venv`, activate it, and check ports `3978` and `56150` are free. |
 | Group-history request fails | Playground cannot grant real Teams `ChatMessage.Read.Chat` consent. Use [local Teams](local-teams-debugging.md). |
 | OneDrive/SharePoint sign-in is unavailable | Expected: Teams SSO exists only in the [deployed environment](deploy-environment.md). |

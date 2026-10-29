@@ -60,7 +60,7 @@ def _load_agent(monkeypatch, mode, extra_env=None):
         "azure.identity.ClientSecretCredential": mocks.bot_credential,
         "azure.identity.ClientAssertionCredential": mocks.assertion_credential,
         "azure.identity.ManagedIdentityCredential": mocks.managed_identity_credential,
-        "foundry.FoundryModelGateway": mocks.gateway,
+        "foundry.FoundryAgentGateway": mocks.gateway,
         "httpx.Client": Mock(return_value=mocks.client),
         "microsoft_agents.activity.load_configuration_from_env": Mock(return_value={}),
         "microsoft_agents.authentication.msal.MsalConnectionManager": Mock(),
@@ -93,6 +93,8 @@ def test_agent_selects_graph_identity_without_changing_foundry(monkeypatch, mode
         SETTINGS["AZURE_AI_PROJECT_ENDPOINT"],
         "model",
         mocks.default_credential.return_value,
+        "teams-poc-general",
+        "teams-poc-summary",
     )
     if mode == "bot":
         mocks.bot_credential.assert_called_once_with(
